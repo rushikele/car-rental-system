@@ -3,6 +3,7 @@ package com.carrental.service;
 import com.carrental.dto.request.LoginRequest;
 import com.carrental.dto.request.RegisterRequest;
 import com.carrental.dto.response.AuthResponse;
+import com.carrental.entity.RefreshToken;
 import com.carrental.entity.User;
 import com.carrental.exception.ResourceNotFoundException;
 import com.carrental.repository.UserRepository;
@@ -23,6 +24,7 @@ public class AuthService {
     @Autowired private JwtUtil jwtUtil;
     @Autowired private AuthenticationManager authenticationManager;
     @Autowired private UserDetailsService userDetailsService;
+    @Autowired private RefreshTokenService refreshTokenService;
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail()))
@@ -44,8 +46,9 @@ public class AuthService {
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(request.getEmail());
         String token = jwtUtil.generateToken(userDetails);
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
 
-        return new AuthResponse(token, user.getName(), user.getEmail(), user.getRole().name());
+        return new AuthResponse(token, user.getName(), user.getEmail(), user.getRole().name(), refreshToken.getToken());
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -59,7 +62,31 @@ public class AuthService {
 
         UserDetails userDetails = userDetailsService.loadUserByUsername(request.getEmail());
         String token = jwtUtil.generateToken(userDetails);
+        RefreshToken refreshToken = refreshTokenService.createRefreshToken(user);
 
-        return new AuthResponse(token, user.getName(), user.getEmail(), user.getRole().name());
+        return new AuthResponse(token, user.getName(), user.getEmail(), user.getRole().name(), refreshToken.getToken());
+    }
+
+    public AuthResponse refreshToken(String requestRefreshToken) {
+        RefreshToken refreshToken = refreshTokenService.findByToken(requestRefreshToken)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
+
+        refreshTokenService.verifyExpiration(refreshToken);
+
+        User user = refreshToken.getUser();
+        UserDetails userDetails = userDetailsService.loadUserByUsername(user.getEmail());
+
+        // rotate: delete old and create new
+        refreshTokenService.deleteByUser(user);
+        RefreshToken newRefreshToken = refreshTokenService.createRefreshToken(user);
+
+        String newAccessToken = jwtUtil.generateToken(userDetails);
+        return new AuthResponse(newAccessToken, user.getName(), user.getEmail(), user.getRole().name(), newRefreshToken.getToken());
+    }
+
+    public void logout(String refreshTokenStr) {
+        RefreshToken refreshToken = refreshTokenService.findByToken(refreshTokenStr)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
+        refreshTokenService.deleteByUser(refreshToken.getUser());
     }
 }
