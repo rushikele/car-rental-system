@@ -13,8 +13,12 @@ import java.util.List;
 @Service
 public class CarService {
 
-    @Autowired
     private CarRepository carRepository;
+
+    private CarService(CarRepository carRepository)
+    {
+        this.carRepository=carRepository;
+    }
 
     // ✅ All available cars
     public List<Car> getAvailableCars() {
